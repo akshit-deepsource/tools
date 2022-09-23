@@ -45,6 +45,7 @@ var (
 	//	s	do additional [s]anity checks on fact types and serialization
 	//	t	show [t]iming info (NB: use 'p' flag to avoid GC/scheduler noise)
 	//	v	show [v]erbose logging
+	//  d build a [d]ot visualization in $PWD/dep.gv
 	//
 	Debug = ""
 
@@ -63,7 +64,7 @@ func RegisterFlags() {
 	// When adding flags here, remember to update
 	// the list of suppressed flags in analysisflags.
 
-	flag.StringVar(&Debug, "debug", Debug, `debug flags, any subset of "fpstv"`)
+	flag.StringVar(&Debug, "debug", Debug, `debug flags, any subset of "fpstvd"`)
 
 	flag.StringVar(&CPUProfile, "cpuprofile", "", "write CPU profile to this file")
 	flag.StringVar(&MemProfile, "memprofile", "", "write memory profile to this file")
@@ -303,10 +304,66 @@ func analyze(pkgs []*packages.Package, analyzers []*analysis.Analyzer) []*action
 		}
 	}
 
+	if dbg('d') {
+		f, err := os.Create("dep.gv")
+		if err != nil {
+			panic(err)
+		}
+
+		b := &strings.Builder{}
+		buildDot(b, roots)
+		_, err = f.WriteString(b.String())
+		if err != nil {
+			panic(err)
+		}
+
+		err = f.Close()
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	// Execute the graph in parallel.
-	execAll(roots)
+	// pool := newExecPool(runtime.GOMAXPROCS(0))
+	// pool.SpawnWorkers()
+	// execAll(roots, pool)
+	// pool.WaitAndDispose()
+
+	pool := newSmartExecPool(runtime.GOMAXPROCS(0), roots)
+	pool.SpawnWorkers()
+	pool.WaitAndDispose()
 
 	return roots
+}
+
+func buildDot(builder *strings.Builder, roots []*action) {
+	builder.WriteString("digraph {\n\tnode [shape=\"rectangle\"]\n")
+	buildDotForActions(builder, roots)
+	builder.WriteString("}")
+}
+
+func buildDotForActions(builder *strings.Builder, actions []*action) {
+	for _, act := range actions {
+		builder.WriteRune('\t')
+		writeDotForAction(builder, act)
+		builder.WriteRune('\n')
+		buildDotForActions(builder, act.deps)
+
+		for _, dep := range act.deps {
+			builder.WriteRune('\t')
+			writeDotForAction(builder, act)
+			builder.WriteString(" -> ")
+			writeDotForAction(builder, dep)
+			builder.WriteRune(';')
+			builder.WriteRune('\n')
+		}
+	}
+}
+
+func writeDotForAction(builder *strings.Builder, act *action) {
+	builder.WriteByte('"')
+	builder.WriteString(act.String())
+	builder.WriteByte('"')
 }
 
 func applyFixes(roots []*action) error {
@@ -640,11 +697,13 @@ func execAll(actions []*action) {
 	wg.Wait()
 }
 
-func (act *action) exec() { act.once.Do(act.execOnce) }
+func (act *action) exec() {
+	act.once.Do(act.execOnce)
+}
 
 func (act *action) execOnce() {
 	// Analyze dependencies.
-	execAll(act.deps)
+	// execAll(act.deps, pool)
 
 	// TODO(adonovan): uncomment this during profiling.
 	// It won't build pre-go1.11 but conditional compilation
