@@ -70,8 +70,8 @@ func addActionsToTree(depth int, actions []*action, tree map[int][]*action) {
 // implementation tries to reduce memory usage by scheduling the passes smartly.
 // Each worker executes the dependencies with the highest depth first
 //
-// This is a naive and may deadlock when there are horizontal dependencies
-// among horizontal passes.
+// This is a naive implementation and may deadlock when there are horizontal
+// dependencies among horizontal passes.
 type smartExecPool struct {
 	getRoot  chan *root
 	workers  int
