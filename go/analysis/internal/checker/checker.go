@@ -261,6 +261,21 @@ func analyze(pkgs []*packages.Package, analyzers []*analysis.Analyzer) []*action
 		*analysis.Analyzer
 		*packages.Package
 	}
+
+	pkgRoots := make(map[*packages.Package]*action)
+	for _, pkg := range pkgs {
+		pkgRoots[pkg] = &action{
+			a: &analysis.Analyzer{
+				Name: "root",
+				Run: func(pass *analysis.Pass) (interface{}, error) {
+					return nil, nil
+				},
+			},
+			pkg:    pkg,
+			isroot: true,
+		}
+	}
+
 	actions := make(map[key]*action)
 
 	var mkAction func(a *analysis.Analyzer, pkg *packages.Package) *action
@@ -294,14 +309,16 @@ func analyze(pkgs []*packages.Package, analyzers []*analysis.Analyzer) []*action
 		return act
 	}
 
-	// Build nodes for initial packages.
-	var roots []*action
 	for _, a := range analyzers {
 		for _, pkg := range pkgs {
-			root := mkAction(a, pkg)
-			root.isroot = true
-			roots = append(roots, root)
+			pkgRoots[pkg].deps = append(pkgRoots[pkg].deps, mkAction(a, pkg))
 		}
+	}
+
+	// Build nodes for initial packages.
+	var roots []*action
+	for _, p := range pkgRoots {
+		roots = append(roots, p)
 	}
 
 	if dbg('d') {

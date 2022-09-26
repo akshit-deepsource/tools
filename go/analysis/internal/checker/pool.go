@@ -91,6 +91,10 @@ func newSmartExecPool(workers int, roots []*action) *smartExecPool {
 	}
 	pool.wg.Add(numRoots)
 
+	if dbg('v') {
+		log.Println("spawning a smart executor pool with", workers, "workers and", numRoots, "roots")
+	}
+
 	for _, act := range roots {
 		pool.getRoot <- buildRoot(act, pool.executed)
 	}
@@ -115,5 +119,8 @@ func (s *smartExecPool) WaitAndDispose() {
 	s.done.Do(func() {
 		s.wg.Wait()
 		close(s.getRoot)
+		if dbg('v') {
+			log.Println("smart executor pool disposed")
+		}
 	})
 }
